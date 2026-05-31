@@ -1,0 +1,16 @@
+{
+    "alcohol": 12.86,
+    "malic_acid": 1.35,
+    "ash": 2.32,
+    "alcalinity_of_ash": 18.0,
+    "magnesium": 122.0,
+    "total_phenols": 1.51,
+    "flavanoids": 1.25,
+    "nonflavanoid_phenols": 0.21,
+    "proanthocyanins": 0.94,
+    "color_intensity": 4.1,
+    "hue": 0.76,
+    "od280_od315": 1.29,
+    "proline": 630.0,
+    "model": "logistic"
+}
