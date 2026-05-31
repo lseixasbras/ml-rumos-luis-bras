@@ -125,3 +125,51 @@ This mirrors how a real wine lab organizes data: one table for general chemistry
 | Missing values | None |
 | Class balance | Slightly imbalanced (33%/40%/27%) |
 | Feature scales | Highly variable (proline ~278-1680 vs hue ~0.48-1.71) |
+
+---
+
+## 8. Data Validation — Validator Design Decisions
+
+### Approach: Two-Layer Validation
+
+We use **Pydantic** (row-level) and **Pandera** (DataFrame-level) together:
+
+| Layer | Tool | Purpose |
+|-------|------|---------|
+| Row-level | Pydantic `WineRecord` | Validates individual records (e.g., API requests, streaming data). Gives precise error messages per field. |
+| Batch-level | Pandera `WineSchema` | Validates entire DataFrames at once (e.g., after loading a CSV). Catches schema-wide issues like wrong dtypes or null columns. Uses `lazy=True` to report ALL errors, not just the first. |
+
+### Why Both?
+
+- **Pydantic** is ideal for validating single records at inference time (API `/predict` endpoint).
+- **Pandera** is ideal for pipeline stages where you validate a full dataset before training or evaluation.
+- The range constraints are defined once in domain terms and mirrored in both tools.
+
+### Validator Range Decisions
+
+Ranges are set with **~20-30% margin** beyond the observed data to allow for legitimate variation in new wines while catching obvious corruption/errors:
+
+| Feature | Observed Range | Validator Range | Rationale |
+|---------|---------------|-----------------|-----------|
+| alcohol | 11.03–14.83 | [8, 17] | Wine can range 8-17% ABV across styles; below 8 is likely juice, above 17 is fortified |
+| malic_acid | 0.74–5.80 | [0, 7] | Must be non-negative; above 7 g/L would indicate measurement error |
+| ash | 1.36–3.23 | [0.5, 5] | Mineral residue; very low/high suggests contamination or error |
+| alcalinity_of_ash | 10.6–30.0 | [5, 40] | Generous margin; values outside indicate non-wine sample |
+| magnesium | 70–162 | [50, 200] | mg/L range for wine; below 50 suggests dilution, above 200 suggests soil contamination |
+| total_phenols | 0.98–3.88 | (0, 6] | Must be strictly positive; upper bound generous for aged wines |
+| flavanoids | 0.34–5.08 | [0, 6] | Can approach 0 in some white wines; 6+ is unrealistic |
+| nonflavanoid_phenols | 0.13–0.66 | [0, 1.5] | Small fraction of phenols; tight upper bound catches errors |
+| proanthocyanins | 0.41–3.58 | [0, 5] | Tannin measure; 5+ would be extreme |
+| color_intensity | 1.28–13.0 | (0, 20] | Optical density; must be positive, very high wines exist (port-like) |
+| hue | 0.48–1.71 | (0, 2.5] | Ratio of optical densities; always positive, above 2.5 is physically unusual |
+| od280_od315 | 1.27–4.00 | (0, 5] | UV absorption ratio; must be positive |
+| proline | 278–1680 | [100, 2500] | Amino acid in mg/L; low in cold climates, high in warm/dry regions |
+| class | {0, 1, 2} | {0, 1, 2} | Exact set — no margin needed for categorical target |
+
+### Design Principles
+
+1. **No nulls allowed** — The raw dataset has no missing values. Any null in processed data indicates a pipeline bug, not expected variation. Fail fast.
+2. **Positivity for all features** — All 13 measurements represent physical/chemical quantities that cannot be negative. Negatives always indicate corruption.
+3. **Domain-informed bounds** — Wines from the same region should pass validation even if slightly outside the 178-sample range.
+4. **Strict class validation** — The target must be exactly 0, 1, or 2. Any other value (including -1, 3, or NaN) is immediately flagged as a data integrity issue.
+5. **Lazy validation in Pandera** — `lazy=True` collects all schema violations before raising, so you see the full picture rather than fixing errors one at a time.
