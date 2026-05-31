@@ -13,6 +13,7 @@
 
 ### Justification
 
+- **This is a classification problem** — the target is a discrete class label (cultivar 1, 2, or 3), not a continuous value. Regression models (e.g., Linear Regression) would incorrectly treat classes as ordered numeric values and produce meaningless outputs like 1.7. All four models selected are classifiers designed to predict categories.
 - The dataset is small (178 samples) → all four models train quickly, so computational cost is not a constraint.
 - We include one linear model (Logistic Regression) and three non-linear models to assess whether the class boundaries are linear or complex.
 - Random Forest and XGBoost both handle feature importance natively, which aids interpretation.
@@ -101,34 +102,7 @@ With only 178 samples, a 30% split leaves just 124 training samples. At 20%, we 
 
 ---
 
-## 6. Data Architecture Decision: Relational Split
-
-For the relational data exercise, features were split into two tables:
-
-| Table | Features | Rationale |
-|-------|----------|-----------|
-| `chemical.csv` | alcohol, malic_acid, ash, alcalinity_of_ash, magnesium, color_intensity, proline | General composition & physical properties — measured via titration, spectrophotometry, chromatography |
-| `phenols.csv` | total_phenols, flavanoids, nonflavanoid_phenols, proanthocyanins, hue, od280_od315 | Phenolic profile panel — all polyphenol subclasses + UV/optical ratios that reflect phenolic content |
-
-This mirrors how a real wine lab organizes data: one table for general chemistry, another for the phenolic analysis panel.
-
----
-
-## 7. Dataset Summary
-
-| Property | Value |
-|----------|-------|
-| Source | UCI Machine Learning Repository |
-| Samples | 178 |
-| Features | 13 (all continuous) |
-| Classes | 3 (cultivar_1: 59, cultivar_2: 71, cultivar_3: 48) |
-| Missing values | None |
-| Class balance | Slightly imbalanced (33%/40%/27%) |
-| Feature scales | Highly variable (proline ~278-1680 vs hue ~0.48-1.71) |
-
----
-
-## 8. Data Validation — Validator Design Decisions
+## 6. Data Validation — Validator Design Decisions
 
 ### Approach: Two-Layer Validation
 
@@ -173,3 +147,17 @@ Ranges are set with **~20-30% margin** beyond the observed data to allow for leg
 3. **Domain-informed bounds** — Wines from the same region should pass validation even if slightly outside the 178-sample range.
 4. **Strict class validation** — The target must be exactly 0, 1, or 2. Any other value (including -1, 3, or NaN) is immediately flagged as a data integrity issue.
 5. **Lazy validation in Pandera** — `lazy=True` collects all schema violations before raising, so you see the full picture rather than fixing errors one at a time.
+
+## 7. Dataset Summary
+
+| Property | Value |
+|----------|-------|
+| Source | UCI Machine Learning Repository |
+| Samples | 178 |
+| Features | 13 (all continuous) |
+| Classes | 3 (cultivar_1: 59, cultivar_2: 71, cultivar_3: 48) |
+| Missing values | None |
+| Class balance | Slightly imbalanced (33%/40%/27%) |
+| Feature scales | Highly variable (proline ~278-1680 vs hue ~0.48-1.71) |
+
+---
