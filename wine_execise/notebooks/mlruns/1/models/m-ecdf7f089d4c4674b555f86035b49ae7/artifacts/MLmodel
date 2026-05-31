@@ -1,0 +1,29 @@
+artifact_path: file:c:/rumos/ML_rumos_luis_bras/wine_execise/notebooks/mlruns/1/models/m-ecdf7f089d4c4674b555f86035b49ae7/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.13.13
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.8.0
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+mlflow_version: 3.12.0
+model_id: m-ecdf7f089d4c4674b555f86035b49ae7
+model_size_bytes: 8353
+model_uuid: m-ecdf7f089d4c4674b555f86035b49ae7
+prompts: null
+run_id: 3e20f79f660c47e884592f67a3b54489
+signature:
+  inputs: '[{"type": "tensor", "tensor-spec": {"dtype": "float64", "shape": [-1, 13]}}]'
+  outputs: '[{"type": "tensor", "tensor-spec": {"dtype": "int64", "shape": [-1]}}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-05-31 22:53:44.617383'

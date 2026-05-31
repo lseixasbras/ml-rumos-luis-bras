@@ -1,57 +1,22 @@
 # Wine Classification — Project Decisions & Considerations
 
-## 1. Model Selection
+## 1. Dataset Summary
 
-### Models Chosen for Comparison
-
-| Model | Why |
-|-------|-----|
-| **Logistic Regression** | Linear baseline; fast, interpretable, works well when features are scaled. Good reference point to measure if more complex models add value. |
-| **Random Forest** | Ensemble of decision trees; handles feature interactions without scaling, robust to outliers. Low tuning effort for strong results. |
-| **XGBoost** | Gradient boosting; typically top performer on tabular data. Captures non-linear patterns with regularization to prevent overfitting. |
-| **SVM (RBF kernel)** | Strong on small-to-medium datasets; effective when classes are separable in high-dimensional space (13 features, 178 samples). |
-
-### Justification
-
-- **This is a classification problem** — the target is a discrete class label (cultivar 1, 2, or 3), not a continuous value. Regression models (e.g., Linear Regression) would incorrectly treat classes as ordered numeric values and produce meaningless outputs like 1.7. All four models selected are classifiers designed to predict categories.
-- The dataset is small (178 samples) → all four models train quickly, so computational cost is not a constraint.
-- We include one linear model (Logistic Regression) and three non-linear models to assess whether the class boundaries are linear or complex.
-- Random Forest and XGBoost both handle feature importance natively, which aids interpretation.
-- SVM is included because it historically performs well on the UCI Wine dataset due to clear class separation in feature space.
+| Property | Value |
+|----------|-------|
+| Source | UCI Machine Learning Repository |
+| Samples | 178 |
+| Features | 13 (all continuous) |
+| Classes | 3 (cultivar_1: 59, cultivar_2: 71, cultivar_3: 48) |
+| Missing values | None |
+| Class balance | Slightly imbalanced (33%/40%/27%) |
+| Feature scales | Highly variable (proline ~278-1680 vs hue ~0.48-1.71) |
 
 ---
 
-## 2. Best Model Selection Criteria
+## 2. Data Preparation (Validation & Preprocessing)
 
-The best model will be selected based on:
-
-1. **F1 Macro** (primary metric) — accounts for slight class imbalance (59/71/48) by treating all classes equally.
-2. **Accuracy** — overall correctness.
-3. **Cross-validation stability** — low variance across folds indicates generalization.
-4. **Simplicity** — if two models have similar performance, prefer the simpler one (Occam's razor).
-
-> Final selection will be made after comparing all four models on the held-out test set and 5-fold cross-validation results.
-
----
-
-## 3. Training Parameters
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| **Test proportion** | 20% (0.2) | 178 samples → ~36 test samples (~12 per class). Enough for meaningful evaluation while keeping 142 for training. |
-| **Stratification** | Yes (`stratify=y`) | Preserves class distribution (59/71/48) in both train and test splits. |
-| **Random seed** | 42 | Reproducibility across experiments. |
-| **Cross-validation** | 5-fold stratified | Standard for small datasets; gives 5 estimates of generalization error. |
-
-### Why 20% and not 30%?
-
-With only 178 samples, a 30% split leaves just 124 training samples. At 20%, we keep 142 for training which gives models more data to learn from, while 36 test samples still provide a reasonable evaluation. The smallest class (cultivar_3 = 48 samples) would have ~10 test samples at 20% — enough to detect gross errors.
-
----
-
-## 4. Preprocessing Steps
-
-### Steps Applied
+### Preprocessing Steps Applied
 
 | Step | Method | Why |
 |------|--------|-----|
@@ -74,37 +39,7 @@ With only 178 samples, a 30% split leaves just 124 training samples. At 20%, we 
 | PCA | Not applied | 13 features is manageable; no need for dimensionality reduction. Interpretability is more valuable here. |
 | Feature engineering | Optional | Ratios like `flavanoids/total_phenols` or `color_intensity * hue` may help linear models but add complexity. |
 
----
-
-## 5. Optimization & Hyperparameter Tuning
-
-### Strategy
-
-1. **Baseline first** — Train all 4 models with default hyperparameters. Record F1 macro and accuracy.
-2. **Grid/Random Search** — Tune the top 2 performing models.
-3. **Optuna** (optional) — Bayesian optimization for XGBoost if time permits.
-
-### Hyperparameter Search Spaces
-
-| Model | Parameters to Tune | Search Range |
-|-------|-------------------|--------------|
-| Logistic Regression | `C`, `max_iter` | C: [0.01, 0.1, 1, 10, 100], max_iter: [200, 500, 1000] |
-| Random Forest | `n_estimators`, `max_depth`, `min_samples_split` | n_estimators: [50, 100, 200], max_depth: [3, 5, 10, None], min_samples_split: [2, 5, 10] |
-| XGBoost | `n_estimators`, `max_depth`, `learning_rate` | n_estimators: [50, 100, 200], max_depth: [3, 5, 7], learning_rate: [0.01, 0.1, 0.3] |
-| SVM | `C`, `gamma`, `kernel` | C: [0.1, 1, 10], gamma: ['scale', 'auto', 0.01, 0.1], kernel: ['rbf'] |
-
-### Expected Improvement Commentary
-
-- Logistic Regression is already near-optimal for linearly separable classes; tuning `C` mainly prevents overfitting.
-- Random Forest benefits most from `max_depth` tuning to balance bias/variance on small data.
-- XGBoost's `learning_rate` and `n_estimators` interact (lower rate needs more estimators); tuning both together is critical.
-- SVM's `C` and `gamma` define the decision boundary smoothness; incorrect values lead to overfitting (high C, high gamma) or underfitting (low C).
-
----
-
-## 6. Data Validation — Validator Design Decisions
-
-### Approach: Two-Layer Validation
+### Data Validation — Two-Layer Approach
 
 We use **Pydantic** (row-level) and **Pandera** (DataFrame-level) together:
 
@@ -113,7 +48,7 @@ We use **Pydantic** (row-level) and **Pandera** (DataFrame-level) together:
 | Row-level | Pydantic `WineRecord` | Validates individual records (e.g., API requests, streaming data). Gives precise error messages per field. |
 | Batch-level | Pandera `WineSchema` | Validates entire DataFrames at once (e.g., after loading a CSV). Catches schema-wide issues like wrong dtypes or null columns. Uses `lazy=True` to report ALL errors, not just the first. |
 
-### Why Both?
+### Pandera VS Pydantic
 
 - **Pydantic** is ideal for validating single records at inference time (API `/predict` endpoint).
 - **Pandera** is ideal for pipeline stages where you validate a full dataset before training or evaluation.
@@ -148,16 +83,123 @@ Ranges are set with **~20-30% margin** beyond the observed data to allow for leg
 4. **Strict class validation** — The target must be exactly 0, 1, or 2. Any other value (including -1, 3, or NaN) is immediately flagged as a data integrity issue.
 5. **Lazy validation in Pandera** — `lazy=True` collects all schema violations before raising, so you see the full picture rather than fixing errors one at a time.
 
-## 7. Dataset Summary
+---
 
-| Property | Value |
-|----------|-------|
-| Source | UCI Machine Learning Repository |
-| Samples | 178 |
-| Features | 13 (all continuous) |
-| Classes | 3 (cultivar_1: 59, cultivar_2: 71, cultivar_3: 48) |
-| Missing values | None |
-| Class balance | Slightly imbalanced (33%/40%/27%) |
-| Feature scales | Highly variable (proline ~278-1680 vs hue ~0.48-1.71) |
+## 3. Exploratory Data Analysis & Feature Engineering
+
+### EDA Goals
+
+- Understand feature distributions and identify skewed features (e.g., proline, color_intensity).
+- Detect correlations between features — highly correlated features may carry redundant information.
+- Visualize class separability — do classes cluster in feature space?
+- Identify potential outliers and assess their impact.
+
+### Key Findings
+
+- **Flavanoids** and **proline** are the most discriminative features for separating cultivars.
+- Strong correlation between `flavanoids` and `total_phenols` (~0.86) — expected since flavanoids are a subset of phenols.
+- Class 0 (cultivar_1) is well-separated from classes 1 and 2 in most feature dimensions.
+- Proline is right-skewed but tree-based models handle this natively without transformation.
+
+### Feature Engineering Decisions
+
+| Feature | Decision | Reason |
+|---------|----------|--------|
+| Engineered ratios | Optional | Ratios like `flavanoids/total_phenols` may help linear models but add complexity. |
+| Polynomial features | Not applied | 13 features already provides enough signal; polynomial expansion would increase dimensionality unnecessarily. |
+| Feature selection | Not applied | All 13 features are domain-relevant and contribute to at least one model's decision boundary. |
+
+---
+
+## 4. Training Parameters
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| **Test proportion** | 20% (0.2) | 178 samples → ~36 test samples (~12 per class). Enough for meaningful evaluation while keeping 142 for training. |
+| **Stratification** | Yes (`stratify=y`) | Preserves class distribution (59/71/48) in both train and test splits. |
+| **Random seed** | 42 | Reproducibility across experiments. |
+| **Cross-validation** | 5-fold stratified | Standard for small datasets; gives 5 estimates of generalization error. |
+
+### Why 20% and not 30%?
+
+With only 178 samples, a 30% split leaves just 124 training samples. At 20%, we keep 142 for training which gives models more data to learn from, while 36 test samples still provide a reasonable evaluation. The smallest class (cultivar_3 = 48 samples) would have ~10 test samples at 20% — enough to detect gross errors.
+
+---
+
+## 5. Model Selection
+
+### Models Chosen for Comparison
+
+| Model | Why |
+|-------|-----|
+| **Logistic Regression** | Linear baseline; fast, interpretable, works well when features are scaled. Good reference point to measure if more complex models add value. |
+| **Random Forest** | Ensemble of decision trees; handles feature interactions without scaling, robust to outliers. Low tuning effort for strong results. |
+| **XGBoost** | Gradient boosting; typically top performer on tabular data. Captures non-linear patterns with regularization to prevent overfitting. |
+| **SVM (RBF kernel)** | Strong on small-to-medium datasets; effective when classes are separable in high-dimensional space (13 features, 178 samples). |
+
+### Justification
+
+- **This is a classification problem** — the target is a discrete class label (cultivar 1, 2, or 3), not a continuous value. Regression models (e.g., Linear Regression) would incorrectly treat classes as ordered numeric values and produce meaningless outputs like 1.7. All four models selected are classifiers designed to predict categories.
+- The dataset is small (178 samples) → all four models train quickly, so computational cost is not a constraint.
+- We include one linear model (Logistic Regression) and three non-linear models to assess whether the class boundaries are linear or complex.
+- Random Forest and XGBoost both handle feature importance natively, which aids interpretation.
+- SVM is included because it historically performs well on the UCI Wine dataset due to clear class separation in feature space.
+
+---
+
+## 6. Best Model Selection Criteria
+
+The best model will be selected based on:
+
+1. **F1 Macro** (primary metric) — accounts for slight class imbalance (59/71/48) by treating all classes equally.
+2. **Accuracy** — overall correctness.
+3. **Cross-validation stability** — low variance across folds indicates generalization.
+4. **Simplicity** — if two models have similar performance, prefer the simpler one (Occam's razor).
+
+> Final selection will be made after comparing all four models on the held-out test set and 5-fold cross-validation results.
+
+---
+
+## 7. Optimization & Hyperparameter Tuning
+
+### Strategy
+
+1. **Baseline first** — Train all 4 models with default hyperparameters. Record F1 macro and accuracy.
+2. **Cross-Validation** — 5-fold stratified CV to get robust performance estimates for all models.
+3. **Grid Search** — Exhaustive search over all 4 models with predefined parameter grids.
+4. **Seed Experiments** — Test 10 random seeds to measure model stability/variance.
+5. **Optuna** — Bayesian optimization (TPE sampler) for all 4 models with 30-50 trials each.
+6. **MLflow** — All experiments tracked with parameters, metrics, and model artifacts.
+
+### Hyperparameter Search Spaces (Grid Search)
+
+| Model | Parameters to Tune | Search Range |
+|-------|-------------------|--------------|
+| Logistic Regression | `C`, `solver`, `max_iter` | C: [0.01, 0.1, 1, 10, 100], solver: ['lbfgs', 'newton-cg'], max_iter: [2000, 5000] |
+| Random Forest | `n_estimators`, `max_depth`, `min_samples_split` | n_estimators: [50, 100, 200], max_depth: [5, 10, 15, None], min_samples_split: [2, 5, 10] |
+| XGBoost | `n_estimators`, `max_depth`, `learning_rate`, `subsample` | n_estimators: [50, 100, 200], max_depth: [3, 5, 7], learning_rate: [0.05, 0.1, 0.2], subsample: [0.8, 1.0] |
+| SVM | `C`, `gamma`, `kernel` | C: [0.1, 1, 10, 100], gamma: ['scale', 'auto'], kernel: ['linear', 'rbf'] |
+
+### Optuna Search Spaces (Bayesian Optimization)
+
+| Model | Trials | Key Parameters |
+|-------|--------|----------------|
+| Logistic Regression | 30 | C: [1e-3, 100] log, solver: ['lbfgs', 'newton-cg', 'saga'], max_iter: [1000, 5000] |
+| Random Forest | 40 | n_estimators: [50, 300], max_depth: [3, 20], min_samples_split/leaf, max_features |
+| XGBoost | 50 | n_estimators, max_depth, learning_rate, subsample, colsample_bytree, reg_alpha/lambda |
+| SVM | 40 | C: [1e-3, 100] log, kernel: ['linear', 'rbf'], gamma: ['scale', 'auto'] |
+
+### Notes on Solver Choices
+
+- **`liblinear` excluded** — Does not support multiclass (n_classes >= 3) directly. Only `lbfgs`, `newton-cg`, and `saga` support multinomial classification natively.
+- **Scaled vs unscaled** — Logistic Regression and SVM use `StandardScaler`-transformed features; Random Forest and XGBoost use raw features (scale-invariant).
+
+### Expected Improvement Commentary
+
+- Logistic Regression is already near-optimal for linearly separable classes; tuning `C` mainly prevents overfitting.
+- Random Forest benefits most from `max_depth` tuning to balance bias/variance on small data.
+- XGBoost's `learning_rate` and `n_estimators` interact (lower rate needs more estimators); tuning both together is critical.
+- SVM's `C` and `gamma` define the decision boundary smoothness; incorrect values lead to overfitting (high C, high gamma) or underfitting (low C).
+- Optuna's TPE sampler typically converges to better solutions than Grid Search with fewer total evaluations.
 
 ---
